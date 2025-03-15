@@ -12,23 +12,42 @@ app.use(express.json());
 
 // Koneksi ke TiDB
 const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
+  host: process.env.DB_HOST || 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
+  user: process.env.DB_USER || 'WT99dVZbbW3Tjmo.root',
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT || 4000,
+  database: process.env.DB_NAME || 'daget_db',
+  port: 4000,
   ssl: {
     minVersion: 'TLSv1.2',
     rejectUnauthorized: true
   },
-  connectionLimit: 10,
   waitForConnections: true,
+  connectionLimit: 5,
   queueLimit: 0
 });
+
+// Cek koneksi database
+const checkDBConnection = async () => {
+  try {
+    const connection = await db.getConnection();
+    console.log('Database connection successful');
+    connection.release();
+    return true;
+  } catch (err) {
+    console.error('Database connection failed:', err);
+    return false;
+  }
+};
 
 // Inisialisasi database
 async function initDB() {
   try {
+    // Cek koneksi terlebih dahulu
+    const isConnected = await checkDBConnection();
+    if (!isConnected) {
+      throw new Error('Could not establish database connection');
+    }
+
     // Buat tabel events terlebih dahulu
     await db.execute(`
       CREATE TABLE IF NOT EXISTS events (
@@ -320,8 +339,23 @@ app.get('/api/check-link/:linkId', async (req, res) => {
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbStatus = await checkDBConnection();
+    res.json({
+      status: dbStatus ? 'ok' : 'error',
+      message: dbStatus ? 'Server is running and database is connected' : 'Server is running but database connection failed',
+      database: dbStatus ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Health check failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Start server

@@ -478,3 +478,15 @@ app.get('/api/check-link/:linkId', async (req, res) => {
     res.status(500).json({ message: 'Gagal memeriksa status link', error: err.message });
   }
 });
+
+// Export untuk Vercel serverless functions
+module.exports = app;
+
+// Jika bukan di Vercel (development), jalankan server
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`Documentation available at: http://localhost:${PORT}/`);
+  });
+}

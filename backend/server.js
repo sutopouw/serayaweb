@@ -7,8 +7,40 @@ const axios = require('axios'); // Tambahkan axios
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// Konfigurasi CORS
+app.use(cors({
+  origin: ['https://serayaweb.vercel.app', 'http://localhost:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
 app.use(express.json());
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Seraya Web API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      admin: {
+        login: '/api/admin/login',
+        winners: '/api/winners'
+      },
+      public: {
+        nextEvent: '/api/public/next-event',
+        winners: '/api/public/winners',
+        checkLink: '/api/check-link/:linkId',
+        submit: '/api/submit/:linkId'
+      }
+    }
+  });
+});
+
+// Options untuk preflight requests
+app.options('*', cors());
 
 // Log environment untuk debugging
 console.log('Environment:', {
@@ -157,6 +189,27 @@ async function seedEvents() {
   }
 }
 
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    status: 'error',
+    message: `Cannot ${req.method} ${req.url}`,
+    documentation: '/',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    status: 'error',
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Jalankan inisialisasi dengan penanganan error yang lebih baik
 const startServer = async () => {
   try {
@@ -170,6 +223,7 @@ const startServer = async () => {
     const PORT = process.env.PORT || 3001;
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
+      console.log(`Documentation available at: http://localhost:${PORT}/`);
     });
   } catch (err) {
     console.error('Failed to initialize application:', {

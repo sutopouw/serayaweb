@@ -9,7 +9,7 @@
   "routes": [
     {
       "src": "/api/public/winners",
-      "dest": "/backend/api/public/winners.js",
+      "dest": "/backend/api/winners.js",
       "methods": ["GET", "OPTIONS"]
     },
     {

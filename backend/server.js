@@ -500,7 +500,9 @@ app.get('/api/check-link/:linkId', async (req, res) => {
 });
 
 // Export handler untuk Vercel
-module.exports = app;
+const handler = async (req, res) => {
+  await app(req, res);
+};
 
 // Development server
 if (process.env.NODE_ENV !== 'production') {
@@ -510,3 +512,5 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`Documentation available at: http://localhost:${PORT}/`);
   });
 }
+
+module.exports = handler;

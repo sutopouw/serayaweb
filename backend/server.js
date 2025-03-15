@@ -12,70 +12,87 @@ app.use(express.json());
 
 // Koneksi ke TiDB
 const db = mysql.createPool({
-  host: process.env.DB_HOST || 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
-  user: process.env.DB_USER || 'WT99dVZbbW3Tjmo.root',
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'daget_db',
+  host: 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
   port: 4000,
+  user: 'WT99dVZbbW3Tjmo.root',
+  password: '12MC9mgpYStsYkMB',
+  database: 'daget_db',
   ssl: {
     minVersion: 'TLSv1.2',
     rejectUnauthorized: true
   },
+  connectTimeout: 20000, // 20 detik timeout
   waitForConnections: true,
-  connectionLimit: 5,
-  queueLimit: 0
+  connectionLimit: 2, // Mengurangi limit koneksi
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 });
 
-// Cek koneksi database
-const checkDBConnection = async () => {
-  try {
-    const connection = await db.getConnection();
-    console.log('Database connection successful');
-    connection.release();
-    return true;
-  } catch (err) {
-    console.error('Database connection failed:', err);
-    return false;
+// Cek koneksi database dengan retry mechanism
+const checkDBConnection = async (retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const connection = await db.getConnection();
+      console.log('Database connection successful');
+      connection.release();
+      return true;
+    } catch (err) {
+      console.error(`Database connection attempt ${i + 1} failed:`, err);
+      if (i === retries - 1) return false;
+      // Wait for 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
   }
+  return false;
 };
 
-// Inisialisasi database
-async function initDB() {
-  try {
-    // Cek koneksi terlebih dahulu
-    const isConnected = await checkDBConnection();
-    if (!isConnected) {
-      throw new Error('Could not establish database connection');
+// Inisialisasi database dengan retry
+async function initDB(retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      // Cek koneksi terlebih dahulu
+      const isConnected = await checkDBConnection();
+      if (!isConnected) {
+        throw new Error('Could not establish database connection');
+      }
+
+      // Buat tabel events terlebih dahulu
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS events (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          event_date TIMESTAMP NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Baru kemudian buat tabel links yang mereferensikan events
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS links (
+          id VARCHAR(36) PRIMARY KEY,
+          event_id INT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          expires_at TIMESTAMP,
+          is_used BOOLEAN DEFAULT FALSE,
+          winner_username VARCHAR(100),
+          discord_id VARCHAR(50),
+          role_reward VARCHAR(50),
+          attempt_count INT DEFAULT 0,
+          FOREIGN KEY (event_id) REFERENCES events(id)
+        )
+      `);
+
+      console.log('Database initialized successfully');
+      return;
+    } catch (err) {
+      console.error(`Database initialization attempt ${i + 1} failed:`, err);
+      if (i === retries - 1) {
+        console.error('All database initialization attempts failed');
+        throw err;
+      }
+      // Wait for 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
-
-    // Buat tabel events terlebih dahulu
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS events (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        event_date TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Baru kemudian buat tabel links yang mereferensikan events
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS links (
-        id VARCHAR(36) PRIMARY KEY,
-        event_id INT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        expires_at TIMESTAMP,
-        is_used BOOLEAN DEFAULT FALSE,
-        winner_username VARCHAR(100),
-        discord_id VARCHAR(50),
-        role_reward VARCHAR(50),
-        FOREIGN KEY (event_id) REFERENCES events(id)
-      )
-    `);
-
-    console.log('Database initialized successfully');
-  } catch (err) {
-    console.error('Error initializing DB:', err);
-    throw err; // Lempar error agar bisa ditangkap oleh pemanggil
   }
 }
 
@@ -93,18 +110,21 @@ async function seedEvents() {
   }
 }
 
-// Jalankan inisialisasi dan seeding secara berurutan
-async function initialize() {
+// Jalankan inisialisasi dengan penanganan error yang lebih baik
+const startServer = async () => {
   try {
-    await initDB(); // Tunggu hingga tabel dibuat
-    await seedEvents(); // Baru kemudian seed data
+    await initDB();
+    const PORT = process.env.PORT || 3001;
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
   } catch (err) {
     console.error('Failed to initialize application:', err);
-    process.exit(1); // Keluar dari aplikasi jika gagal
+    process.exit(1);
   }
-}
+};
 
-initialize(); // Panggil fungsi inisialisasi
+startServer();
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -356,10 +376,4 @@ app.get('/api/health', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
-});
-
-// Start server
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
 });

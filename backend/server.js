@@ -18,6 +18,12 @@ app.use(cors({
 
 app.use(express.json());
 
+// Middleware untuk logging requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -493,10 +499,10 @@ app.get('/api/check-link/:linkId', async (req, res) => {
   }
 });
 
-// Export untuk Vercel serverless functions
+// Export handler untuk Vercel
 module.exports = app;
 
-// Jika bukan di Vercel (development), jalankan server
+// Development server
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3001;
   app.listen(PORT, () => {

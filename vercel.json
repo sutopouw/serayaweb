@@ -9,7 +9,17 @@
   "routes": [
     {
       "src": "/api/public/winners",
-      "dest": "/backend/api/public/winners.js"
+      "dest": "backend/api/public/winners.js",
+      "methods": ["GET", "OPTIONS"]
+    },
+    {
+      "src": "/api/health",
+      "dest": "backend/api/health.js",
+      "methods": ["GET", "OPTIONS"]
+    },
+    {
+      "src": "/(.*)",
+      "dest": "backend/api/index.js"
     }
   ],
   "env": {

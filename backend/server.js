@@ -391,11 +391,13 @@ app.post('/api/submit/:linkId', async (req, res) => {
 // Riwayat pemenang (admin)
 app.get('/api/winners', authenticateAdmin, async (req, res) => {
   try {
-    const [winners] = await db.execute(
+    const pool = getDB();
+    const [winners] = await pool.execute(
       'SELECT id, winner_username, discord_id, role_reward, created_at FROM links WHERE is_used = TRUE ORDER BY created_at DESC'
     );
     res.json(winners);
   } catch (err) {
+    console.error('Error fetching admin winners:', err);
     res.status(500).json({ message: 'Failed to fetch winners', error: err.message });
   }
 });
@@ -403,12 +405,24 @@ app.get('/api/winners', authenticateAdmin, async (req, res) => {
 // Pemenang publik
 app.get('/api/public/winners', async (req, res) => {
   try {
-    const [winners] = await db.execute(
-      'SELECT winner_username, role_reward, id FROM links WHERE is_used = TRUE ORDER BY created_at DESC'
+    const pool = getDB();
+    const [winners] = await pool.execute(
+      'SELECT winner_username, role_reward, created_at FROM links WHERE is_used = TRUE ORDER BY created_at DESC'
     );
-    res.json(winners);
+    res.json({
+      status: 'success',
+      data: winners,
+      count: winners.length,
+      timestamp: new Date().toISOString()
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to fetch winners', error: err.message });
+    console.error('Error fetching public winners:', err);
+    res.status(500).json({ 
+      status: 'error',
+      message: 'Failed to fetch winners', 
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 

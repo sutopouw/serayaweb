@@ -2,15 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend/server.js",
+      "src": "backend/api/**/*.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "backend/server.js",
-      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"]
+      "src": "/api/public/winners",
+      "dest": "/backend/api/public/winners.js"
     }
   ],
   "env": {

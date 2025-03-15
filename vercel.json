@@ -9,7 +9,7 @@
   "routes": [
     {
       "src": "/api/public/winners",
-      "dest": "/backend/api/winners.js",
+      "dest": "/backend/api/public/winners.js",
       "methods": ["GET", "OPTIONS"]
     },
     {
@@ -24,5 +24,11 @@
   ],
   "env": {
     "NODE_ENV": "production"
+  },
+  "functions": {
+    "backend/api/**/*.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
   }
 } 

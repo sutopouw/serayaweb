@@ -20,17 +20,17 @@ module.exports = async (req, res) => {
   }
 
   try {
-    console.log('Attempting to fetch winners...');
+    console.log('[winners] Attempting to fetch winners...');
     const pool = getDB();
     
     // Test database connection first
     const [testResult] = await pool.execute('SELECT 1 as test');
-    console.log('Database connection test:', testResult);
+    console.log('[winners] Database connection test:', testResult);
 
     const [winners] = await pool.execute(
       'SELECT winner_username, role_reward, created_at FROM links WHERE is_used = TRUE ORDER BY created_at DESC'
     );
-    console.log(`Found ${winners.length} winners`);
+    console.log(`[winners] Found ${winners.length} winners`);
 
     return res.status(200).json({
       status: 'success',
@@ -39,7 +39,7 @@ module.exports = async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (err) {
-    console.error('Error fetching winners:', err);
+    console.error('[winners] Error fetching winners:', err);
     return res.status(500).json({
       status: 'error',
       message: 'Failed to fetch winners',

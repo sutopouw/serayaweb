@@ -1,4 +1,4 @@
-const { getDB } = require('../../db');
+const { getDB } = require('../../../db');
 
 module.exports = async (req, res) => {
   // Set CORS headers
@@ -20,6 +20,7 @@ module.exports = async (req, res) => {
   }
 
   try {
+    console.log('[winners] Request received:', req.method, req.url);
     console.log('[winners] Attempting to fetch winners...');
     const pool = getDB();
     

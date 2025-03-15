@@ -6,20 +6,37 @@
       "use": "@vercel/node"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/public/winners",
-      "dest": "/backend/api/public/winners.js",
-      "methods": ["GET", "OPTIONS"]
+      "source": "/api/public/winners",
+      "destination": "/backend/api/public/winners.js"
     },
     {
-      "src": "/api/health",
-      "dest": "/backend/api/health.js",
-      "methods": ["GET", "OPTIONS"]
+      "source": "/api/health",
+      "destination": "/backend/api/health.js"
     },
     {
-      "src": "/(.*)",
-      "dest": "/backend/api/index.js"
+      "source": "/(.*)",
+      "destination": "/backend/api/index.js"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type"
+        }
+      ]
     }
   ],
   "env": {

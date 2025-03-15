@@ -10,8 +10,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Log environment untuk debugging
+console.log('Environment:', {
+  NODE_ENV: process.env.NODE_ENV,
+  DB_HOST: process.env.DB_HOST,
+  DB_PORT: process.env.DB_PORT
+});
+
 // Koneksi ke TiDB
-const db = mysql.createPool({
+const dbConfig = {
   host: 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
   port: 4000,
   user: 'WT99dVZbbW3Tjmo.root',
@@ -21,27 +28,52 @@ const db = mysql.createPool({
     minVersion: 'TLSv1.2',
     rejectUnauthorized: true
   },
-  connectTimeout: 20000, // 20 detik timeout
+  connectTimeout: 30000, // 30 detik timeout
   waitForConnections: true,
-  connectionLimit: 2, // Mengurangi limit koneksi
+  connectionLimit: 1, // Mengurangi ke 1 koneksi
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+  keepAliveInitialDelay: 0,
+  multipleStatements: true,
+  timezone: '+00:00'
+};
+
+console.log('Attempting to connect to database with config:', {
+  host: dbConfig.host,
+  port: dbConfig.port,
+  user: dbConfig.user,
+  database: dbConfig.database
 });
+
+const db = mysql.createPool(dbConfig);
 
 // Cek koneksi database dengan retry mechanism
 const checkDBConnection = async (retries = 3) => {
   for (let i = 0; i < retries; i++) {
     try {
+      console.log(`Attempting database connection (attempt ${i + 1}/${retries})...`);
       const connection = await db.getConnection();
       console.log('Database connection successful');
+      
+      // Test query sederhana
+      const [result] = await connection.query('SELECT 1 as test');
+      console.log('Test query result:', result);
+      
       connection.release();
       return true;
     } catch (err) {
-      console.error(`Database connection attempt ${i + 1} failed:`, err);
+      console.error(`Database connection attempt ${i + 1} failed:`, {
+        message: err.message,
+        code: err.code,
+        errno: err.errno,
+        sqlState: err.sqlState,
+        sqlMessage: err.sqlMessage,
+        stack: err.stack
+      });
+      
       if (i === retries - 1) return false;
-      // Wait for 2 seconds before retrying
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log(`Waiting 5 seconds before retry...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
   return false;
@@ -51,12 +83,15 @@ const checkDBConnection = async (retries = 3) => {
 async function initDB(retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
+      console.log(`Starting database initialization (attempt ${i + 1}/${retries})...`);
+      
       // Cek koneksi terlebih dahulu
       const isConnected = await checkDBConnection();
       if (!isConnected) {
         throw new Error('Could not establish database connection');
       }
 
+      console.log('Creating events table...');
       // Buat tabel events terlebih dahulu
       await db.execute(`
         CREATE TABLE IF NOT EXISTS events (
@@ -65,7 +100,9 @@ async function initDB(retries = 3) {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
+      console.log('Events table created/verified successfully');
 
+      console.log('Creating links table...');
       // Baru kemudian buat tabel links yang mereferensikan events
       await db.execute(`
         CREATE TABLE IF NOT EXISTS links (
@@ -81,19 +118,29 @@ async function initDB(retries = 3) {
           FOREIGN KEY (event_id) REFERENCES events(id)
         )
       `);
+      console.log('Links table created/verified successfully');
 
       console.log('Database initialized successfully');
-      return;
+      return true;
     } catch (err) {
-      console.error(`Database initialization attempt ${i + 1} failed:`, err);
+      console.error(`Database initialization attempt ${i + 1} failed:`, {
+        message: err.message,
+        code: err.code,
+        errno: err.errno,
+        sqlState: err.sqlState,
+        sqlMessage: err.sqlMessage,
+        stack: err.stack
+      });
+      
       if (i === retries - 1) {
         console.error('All database initialization attempts failed');
         throw err;
       }
-      // Wait for 2 seconds before retrying
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log(`Waiting 5 seconds before retry...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
+  return false;
 }
 
 // Seed data dummy untuk events
@@ -113,13 +160,22 @@ async function seedEvents() {
 // Jalankan inisialisasi dengan penanganan error yang lebih baik
 const startServer = async () => {
   try {
-    await initDB();
+    console.log('Starting server initialization...');
+    const dbInitialized = await initDB();
+    
+    if (!dbInitialized) {
+      throw new Error('Failed to initialize database after all retries');
+    }
+
     const PORT = process.env.PORT || 3001;
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
   } catch (err) {
-    console.error('Failed to initialize application:', err);
+    console.error('Failed to initialize application:', {
+      message: err.message,
+      stack: err.stack
+    });
     process.exit(1);
   }
 };

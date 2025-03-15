@@ -60,9 +60,9 @@ const dbConfig = {
     minVersion: 'TLSv1.2',
     rejectUnauthorized: true
   },
-  connectTimeout: 30000, // 30 detik timeout
+  connectTimeout: 30000,
   waitForConnections: true,
-  connectionLimit: 1, // Mengurangi ke 1 koneksi
+  connectionLimit: 1,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
@@ -70,22 +70,30 @@ const dbConfig = {
   timezone: '+00:00'
 };
 
-console.log('Attempting to connect to database with config:', {
-  host: dbConfig.host,
-  port: dbConfig.port,
-  user: dbConfig.user,
-  database: dbConfig.database
-});
+// Buat pool database
+let db;
 
-const db = mysql.createPool(dbConfig);
+// Inisialisasi database pool
+const initializeDB = () => {
+  if (!db) {
+    console.log('Initializing database pool...');
+    db = mysql.createPool(dbConfig);
+  }
+  return db;
+};
+
+// Get database connection
+const getDB = () => {
+  return initializeDB();
+};
 
 // Cek koneksi database dengan retry mechanism
 const checkDBConnection = async (retries = 3) => {
+  const pool = getDB();
   for (let i = 0; i < retries; i++) {
     try {
       console.log(`Attempting database connection (attempt ${i + 1}/${retries})...`);
-      const connection = await db.getConnection();
-      console.log('Database connection successful');
+      const connection = await pool.getConnection();
       
       // Test query sederhana
       const [result] = await connection.query('SELECT 1 as test');
@@ -99,8 +107,7 @@ const checkDBConnection = async (retries = 3) => {
         code: err.code,
         errno: err.errno,
         sqlState: err.sqlState,
-        sqlMessage: err.sqlMessage,
-        stack: err.stack
+        sqlMessage: err.sqlMessage
       });
       
       if (i === retries - 1) return false;
@@ -113,6 +120,7 @@ const checkDBConnection = async (retries = 3) => {
 
 // Inisialisasi database dengan retry
 async function initDB(retries = 3) {
+  const pool = getDB();
   for (let i = 0; i < retries; i++) {
     try {
       console.log(`Starting database initialization (attempt ${i + 1}/${retries})...`);
@@ -124,19 +132,16 @@ async function initDB(retries = 3) {
       }
 
       console.log('Creating events table...');
-      // Buat tabel events terlebih dahulu
-      await db.execute(`
+      await pool.execute(`
         CREATE TABLE IF NOT EXISTS events (
           id INT AUTO_INCREMENT PRIMARY KEY,
           event_date TIMESTAMP NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
-      console.log('Events table created/verified successfully');
 
       console.log('Creating links table...');
-      // Baru kemudian buat tabel links yang mereferensikan events
-      await db.execute(`
+      await pool.execute(`
         CREATE TABLE IF NOT EXISTS links (
           id VARCHAR(36) PRIMARY KEY,
           event_id INT,
@@ -150,30 +155,62 @@ async function initDB(retries = 3) {
           FOREIGN KEY (event_id) REFERENCES events(id)
         )
       `);
-      console.log('Links table created/verified successfully');
 
-      console.log('Database initialized successfully');
       return true;
     } catch (err) {
-      console.error(`Database initialization attempt ${i + 1} failed:`, {
-        message: err.message,
-        code: err.code,
-        errno: err.errno,
-        sqlState: err.sqlState,
-        sqlMessage: err.sqlMessage,
-        stack: err.stack
-      });
-      
+      console.error(`Database initialization attempt ${i + 1} failed:`, err);
       if (i === retries - 1) {
         console.error('All database initialization attempts failed');
-        throw err;
+        return false;
       }
-      console.log(`Waiting 5 seconds before retry...`);
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
   return false;
 }
+
+// Update semua referensi db ke getDB()
+const executeQuery = async (query, params = []) => {
+  const pool = getDB();
+  try {
+    const [results] = await pool.execute(query, params);
+    return results;
+  } catch (error) {
+    console.error('Query execution error:', error);
+    throw error;
+  }
+};
+
+// Jalankan inisialisasi
+initDB().catch(console.error);
+
+// Health check endpoint dengan timeout
+app.get('/api/health', async (req, res) => {
+  try {
+    // Tambahkan timeout 10 detik
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Database health check timeout')), 10000)
+    );
+    
+    const healthCheck = checkDBConnection();
+    
+    const dbStatus = await Promise.race([healthCheck, timeoutPromise]);
+    
+    res.json({
+      status: dbStatus ? 'ok' : 'error',
+      message: dbStatus ? 'Server is running and database is connected' : 'Server is running but database connection failed',
+      database: dbStatus ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Health check failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 // Seed data dummy untuk events
 async function seedEvents() {
@@ -209,32 +246,6 @@ app.use((err, req, res, next) => {
     timestamp: new Date().toISOString()
   });
 });
-
-// Jalankan inisialisasi dengan penanganan error yang lebih baik
-const startServer = async () => {
-  try {
-    console.log('Starting server initialization...');
-    const dbInitialized = await initDB();
-    
-    if (!dbInitialized) {
-      throw new Error('Failed to initialize database after all retries');
-    }
-
-    const PORT = process.env.PORT || 3001;
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`Documentation available at: http://localhost:${PORT}/`);
-    });
-  } catch (err) {
-    console.error('Failed to initialize application:', {
-      message: err.message,
-      stack: err.stack
-    });
-    process.exit(1);
-  }
-};
-
-startServer();
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -465,25 +476,5 @@ app.get('/api/check-link/:linkId', async (req, res) => {
     res.json({ is_used: link[0].is_used });
   } catch (err) {
     res.status(500).json({ message: 'Gagal memeriksa status link', error: err.message });
-  }
-});
-
-// Health check endpoint
-app.get('/api/health', async (req, res) => {
-  try {
-    const dbStatus = await checkDBConnection();
-    res.json({
-      status: dbStatus ? 'ok' : 'error',
-      message: dbStatus ? 'Server is running and database is connected' : 'Server is running but database connection failed',
-      database: dbStatus ? 'connected' : 'disconnected',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'Health check failed',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
   }
 });
